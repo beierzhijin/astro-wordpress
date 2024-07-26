@@ -1,0 +1,88 @@
+---
+import type { Block } from "@wp-block-tools/styles";
+import BlockRenderer from "../components/BlockRenderer.astro";
+import CommonHead from "../components/CommonHead.astro";
+
+export async function getStaticPaths() {
+  const response = await fetch(`${import.meta.env.WPGRAPHQL_URL}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      /* 这样直接一次性查询所有页面的所有信息数据量可能会很大，导致wordpress网站崩溃 */
+      // query: `
+      //   query AllPages {
+      //     pages(first: 10000) {
+      //       nodes {
+      //         uri
+      //         blocks
+      //         seo {
+      //           title
+      //           metaDesc
+      //         }
+      //       }
+      //     }
+      //   }
+      // `,
+      query: `
+        query AllPages {
+          pages(first: 10000) {
+            nodes {
+              uri
+            }
+          }
+        }
+      `,
+    }),
+  });
+  const { data } = await response.json();
+  return data.pages.nodes.map((page: any) => ({
+    params: {
+      slug: page.uri === "/" ? undefined : page.uri,
+    },
+  }));
+}
+
+const { slug } = Astro.params;
+const response = await fetch(`${import.meta.env.WPGRAPHQL_URL}`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    /**
+      1. GraphQL对于动态传参的处理，定义类型，String! 必填!
+      2. query，variables是GraphQL的概念，$uri是形参，variables.uri是实参
+    */
+    query: `
+      query PageQuery($uri: String!) {
+        nodeByUri(uri: $uri) {
+          ... on Page {
+            id
+            blocks
+            seo { 
+              metaDesc
+              title
+            }
+          }
+        }
+      }
+    `,
+    variables: {
+      uri: slug || "/",
+    },
+  }),
+});
+
+const { data } = await response.json();
+const blocks = (data.nodeByUri?.blocks || []) as Block[];
+const seo = data.nodeByUri?.seo;
+---
+
+<html lang="en">
+  <CommonHead title={seo.title || ""} description={seo.metaDesc ?? ""} />
+  <body>
+    <BlockRenderer blocks={blocks} />
+  </body>
+</html>
